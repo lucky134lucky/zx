@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+
+<body>
+<canvas width="768" height="576" id="Output"></canvas>
+<output id="list"></output>
+<script>
+    var memory = [];
+    var c = document.getElementById("Output");
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#cfcdcf";
+    ctx.fillRect(0, 0, 768, 576);
+    var fr = new FileReader();
+
+    function handleFileSelect(evt) {
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        var files = evt.dataTransfer.files; // FileList object.files[0]files[0]files[0]
+        var file = files[0];
+        fr.readAsArrayBuffer(file);
+        fr.addEventListener('load', function() {
+            var u = new Uint8Array(this.result);
+            for (var i = 0; i < 6912; i++) {
+                memory[16384 + i] = u[i];
+
+            }
+            drawScreen();
+        });
+
+    }
+    function handleDragOver(evt) {
+        evt.stopPropagation();
+        evt.preventDefault();
+        evt.dataTransfer.dropEffect = 'copy';
+    }
+
+    var dropZone = document.getElementById('Output');
+    dropZone.addEventListener('dragover', handleDragOver, false);
+    dropZone.addEventListener('drop', handleFileSelect, false);
+
+    function drawScreen() {
+        var y = 0;
+        var x = 0;
+        var attribute;
+        var firstAttribute = 22528;
+        var colors = {
+            0: "#000000",
+            b0: "#000000",
+            1: "#0000CD",
+            b1: "#0000FF",
+            2: "#CD0000",
+            b2: "#FF0000",
+            3: "#CD00CD",
+            b3: "#FF00FF",
+            4: "#00CD00",
+            b4: "#00FF00",
+            5: "#00CDCD",
+            b5: "#00FFFF",
+            6: "#CDCD00",
+            b6: "#FFFF00",
+            7: "#CDCDCD",
+            b7: "#FFFFFF"
+        };
+        for (var i = 16384; i < 22528; i++) {
+            x = i % 32 * 24;
+            if (i % 32 == 0 && i != 16384) {
+                if (((i - 16384) % 2048) == 0 && i != 16384) {
+                    y += 192;
+                    firstAttribute += 288;
+                } else {
+                    firstAttribute += 32;
+                    y += 24;
+                }
+            }
+            if ((i % 256) == 0 && i != 16384) {
+                y = y - 192 + 3;
+                firstAttribute -= 256;
+            }
+            attribute = firstAttribute + i % 32;
+            ctx.fillStyle = "#000000";
+            var ink = 0,
+                    brightness = 0,
+                    backgroundColor = 0,
+                    flash = 0;
+            for (var l = 1; l <= 128; l *= 2) {
+                if (l <= 4) ink |= memory[attribute] & l;
+                else if (l <= 32) backgroundColor |= memory[attribute] & l;
+                else if (l == 64) brightness |= memory[attribute] & l;
+                else flash |= memory[attribute] & l;
+            }
+
+            backgroundColor = brightness ? colors["b" + (backgroundColor >> 3)] : colors[backgroundColor >> 3];
+            ink = brightness ? colors["b" + ink] : colors[ink];
+            if ((i >= 16384 && i <= 16639) || (i >= 18432 && i <= 18687) || (i >= 20480 && i <= 20735)) {
+                ctx.fillStyle = backgroundColor;
+                ctx.fillRect(x, y, 24, 24);
+            }
+
+            ctx.fillStyle = ink;
+            var pixelX = 21;
+            for (var s = 1; s <= 128; s *= 2) {
+                if ((memory[i] & s) > 0) {
+                    ctx.fillRect(x + pixelX, y, 3, 3);
+                }
+                pixelX -= 3;
+            }
+            if ((i >= 18176 && i < 18432) || (i >= 20224 && i < 20480) || (i >= 22272 && i < 22528)) {
+                if (flash) memory[attribute] ^= 63;
+            }
+        }
+    }
+</script>
+</body>
+
+</html>
