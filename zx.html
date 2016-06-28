@@ -12,14 +12,14 @@
 <script>
     var memory = [];
     var cpu = {
-        A: 0,
-        F: 0,
-        B: 0,
-        C: 0,
-        D: 0,
-        E: 0,
-        H: 0,
-        L:0
+        111: 0,
+        110: 0,
+        000: 0,
+        001: 0,
+        010: 0,
+        011: 0,
+        100: 0,
+        101:0
     };
     var c = document.getElementById("Output");
     var ctx = c.getContext("2d");
@@ -125,8 +125,16 @@
             }
         }
     }
-    function ld (r, _r){
-        cpu[r] = cpu[_r];
+    function execute (byte){
+        var operation=0, firstAarg, secondArg;
+        for (var l = 1; l <= 128; l *= 2) {
+            if (l <= 4) secondArg |= byte[attribute] & l;
+            else if (l <= 32) firstAarg |= byte[attribute] & l;
+            else if (l == 64) operation |= byte[attribute] & l;
+        }
+        switch (operation){
+            case 64: cpu[firstAarg] = cpu[secondArg>>3];break;
+        }
     }
 </script>
 </body>
