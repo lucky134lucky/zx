@@ -191,6 +191,7 @@
         console.log(firstArg + "     " + secondArg + "     OP: " + operation);
         switch (operation) {
             case 64:
+
                 if (secondArg == 6) LD_r_contHL(firstArg, secondArg);
                 else if (firstArg >> 3 == 6) {
                     LD_contHL_r(firstArg, secondArg);
