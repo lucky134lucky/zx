@@ -9,17 +9,32 @@
 <body>
 <canvas width="768" height="576" id="Output"></canvas>
 <output id="list"></output>
+<script src="tests.js"></script>
 <script>
     var memory = [];
     var cpu = {
         7: 0,
-        6: 0,
         0: 0,
         1: 0,
         2: 0,
         3: 0,
         4: 0,
-        5:0
+        5: 0,
+        IP: 0,
+        HL: 0,
+        IX: 0,
+        IY: 0,
+        I: 0,
+        R: 0,
+        11:0,
+        12:0
+    };
+    var translate = {
+        2: [4, 5],
+        AF: [7, 6],
+        0: [0, 1],
+        1: [2, 3],
+        3: [11, 12]
     };
     var c = document.getElementById("Output");
     var ctx = c.getContext("2d");
@@ -34,16 +49,17 @@
         var files = evt.dataTransfer.files; // FileList object.files[0]files[0]files[0]
         var file = files[0];
         fr.readAsArrayBuffer(file);
-        fr.addEventListener('load', function() {
-            var u = new Uint8Array(this.result);
-            for (var i = 0; i < 6912; i++) {
-                memory[16384 + i] = u[i];
 
-            }
-            drawScreen();
-        });
 
     }
+    fr.addEventListener('load', function() {
+        var u = new Uint8Array(this.result);
+        for (var i = 0; i < u.length; i++) {
+            memory[cpu["IP"]+i] = u[i];
+        }
+        do execute();
+        while(memory[cpu["IP"]]);
+    });
     function handleDragOver(evt) {
         evt.stopPropagation();
         evt.preventDefault();
@@ -125,25 +141,370 @@
             }
         }
     }
-    function execute (byte){
-        var operation=0, firstAarg=0, secondArg=0;
-        for (var l = 1; l <= 128; l *= 2) {
-            if (l <= 4) secondArg |= byte & l;
-            else if (l <= 32) firstAarg |= byte & l;
-            else if (l == 64) operation |= byte & l;
-        }
-        console.log(firstAarg+"   "+secondArg);
-        switch (operation){
-            case 64: cpu[firstAarg>>3] = cpu[secondArg];break;
-        }
+
+    function get16bitFromRegs(regs) {
+        var byte1 = cpu[translate[regs][0]];
+        var byte2 = cpu[translate[regs][1]];
+        var int16 = (byte2 << 8) | byte1;
+        return int16;
     }
 
-    function testLd() {
-        cpu[7]=6;
-        cpu[6]=2;
-        var byte=0|64|32|16|8|4|2;
-        execute(byte);
-        console.log(cpu[7]==cpu[6]);
+    function get16bit(byte1, byte2) {
+        var int16 = (byte2 << 8) | byte1;
+        return int16;
+    }
+
+    function set8bit(reg, int) {
+        var regs = translate[reg];
+        var byte = [cpu[regs[0]], cpu[regs[1]]];
+        byte[1] = (int >> 8) & 0xff;
+        byte[0] = int & 0xff;
+        cpu[regs[0]] = byte[0];
+        cpu[regs[1]] = byte[1];
+    }
+
+    function get8bit(int) {
+        var byte = [];
+        byte[1] = (int >> 8) & 0xff;
+        byte[0] = int & 0xff;
+        return byte;
+    }
+
+    function getArgumentsFromByte(byte) {
+        var args = [];
+        for (var l = 1; l <= 128; l *= 2) {
+            if (l <= 4) args[2] |= byte & l;
+            else if (l <= 32) args[1] |= byte & l;
+            else args[0] |= byte & l;
+        }
+        return args;
+    }
+
+    function execute() {
+        var byte = memory[cpu["IP"]];
+        var args = getArgumentsFromByte(byte);
+        var operation = args[0],
+                firstArg = args[1],
+                secondArg = args[2];
+
+
+        console.log(firstArg + "     " + secondArg + "     OP: " + operation);
+        switch (operation) {
+            case 64:
+
+                if (secondArg == 6) LD_r_contHL(firstArg, secondArg);
+                else if (firstArg >> 3 == 6) {
+                    LD_contHL_r(firstArg, secondArg);
+                } else LD_r_r(firstArg, secondArg);
+                break;
+            case 0:
+                if (secondArg == 6 && firstArg >> 3 != 6) {
+                    LD_r_n(firstArg, secondArg);
+                } else if (secondArg == 1) {
+                    LD_dd_nn(firstArg >> 4);
+                    console.log("");
+                }
+                switch (byte) {
+                    case 54:
+                        LD_contHL_n();
+                        break;
+                    case 10:
+                        LD_A_contBC();
+                        break;
+                    case 26:
+                        LD_A_contDE();
+                        break;
+                    case 58:
+                        LD_A_cont_nn();
+                        break;
+                    case 2:
+                        LD_contBC_A();
+                        break;
+                    case 18:
+                        LD_contDE_A();
+                        break;
+                    case 50:
+                        LD_cont_nn_A();
+                        break;
+                    case 42:
+                        LD_HL_cont_nn();
+                        break;
+                    case 34:
+                        LD_cont_nn_HL();
+                        break;
+                }
+                break;
+            case 192:
+                var secondByte = getArgumentsFromByte(memory[cpu["IP"] + 1]);
+                cpu["IP"] += 1;
+                switch (byte) {
+
+                    case 221:
+                        switch (memory[cpu["IP"]]) {
+                            case 33:
+                                LD_IX_nn();
+                                break;
+
+                            case 42:
+                                LD_IX_cont_nn();
+                                break;
+                            case 34:
+                                LD_cont_nn_IX();
+                                break;
+                            case 249:
+                                LD_SP_IX();
+                        }
+                        switch (secondByte[0]) {
+                            case 64:
+                                if (secondByte[2] == 6) {
+                                    LD_r_contIX_D(secondByte);
+                                } else if (secondByte[1] >> 3 == 6) {
+                                    LD_contIX_D_r(secondByte);
+                                }
+                                break;
+                            case 0:
+                                if (secondByte[1] >> 3 == 6 && secondByte[2] == 6) {
+                                    LD_contIX_D_n();
+                                }
+                                break;
+                        }
+
+                        break;
+                    case 237:
+                        if (secondByte[2] == 3) {
+                            if (memory[cpu["IP"]] & 8)
+                                LD_dd_cont_nn(secondByte[1] >> 4);
+                            else  LD_cont_nn_dd(secondByte[1] >> 4);
+                        }
+                        switch (memory[cpu["IP"]]) {
+                            case 87:
+                                LD_A_I();
+                                break;
+
+                            case 95:
+                                LD_A_R();
+                                break;
+                            case 71:
+                                LD_I_A();
+                                break;
+                            case 79:
+                                LD_R_A();
+                                break;
+                        }
+                        break;
+                    case 253:
+                        switch (memory[cpu["IP"]]) {
+                            case 33:
+                                LD_IY_nn();
+                                break;
+
+                            case 42:
+                                LD_IY_cont_nn();
+                                break;
+                            case 34:
+                                LD_cont_nn_IY();
+                                break;
+                            case 249:
+                                LD_SP_IY();
+                        }
+                        switch (secondByte[0]) {
+                            case 64:
+                                if (secondByte[2] == 6) {
+                                    LD_r_contIY_D(secondByte);
+                                } else if (secondByte[1] >> 3 == 6) {
+                                    LD_contIY_D_r(secondByte);
+                                }
+                                break;
+                            case 0:
+                                if (secondByte[1] >> 3 == 6 && secondByte[2] == 6) {
+                                    LD_contIY_D_n();
+                                }
+                                break;
+                        }
+                        break;
+                    case 249:
+                        LD_SP_HL();
+                }
+                break;
+        }
+        cpu["IP"]++;
+    }
+
+    function LD_r_r(firstArg, secondArg) {
+        cpu[firstArg >> 3] = cpu[secondArg];
+    }
+
+    function LD_r_n(firstArg, secondArg) {
+
+        cpu[firstArg >> 3] = memory[cpu["IP"] + 1];
+        cpu["IP"]++;
+    }
+
+    function LD_r_contHL(firstArg, secondArg) {
+        var HL = 0;
+        cpu[firstArg >> 3] = memory[get16bitFromRegs(2)];
+    }
+
+    function LD_r_contIX_D(secondByte) {
+        cpu[secondByte[1] >> 3] = memory[cpu["IX"] + memory[cpu["IP"] + 1]];
+        cpu["IP"]++;
+    }
+
+    function LD_r_contIY_D(secondByte) {
+        cpu[secondByte[1] >> 3] = memory[cpu["IY"] + memory[cpu["IP"] + 1]];
+        cpu["IP"]++;
+    }
+
+    function LD_contHL_r(firstArg, secondArg) {
+        memory[get16bitFromRegs(2)] = cpu[secondArg];
+    }
+
+    function LD_contIX_D_r(secondByte) {
+        memory[cpu["IX"] + memory[cpu["IP"] + 1]] = cpu[secondByte[2]];
+        cpu["IP"]++;
+    }
+
+    function LD_contIY_D_r(secondByte) {
+        memory[cpu["IY"] + memory[cpu["IP"] + 1]] = cpu[secondByte[2]];
+        cpu["IP"]++;
+    }
+
+    function LD_contHL_n() {
+        memory[get16bitFromRegs(2)] = memory[cpu["IP"] + 1];
+        cpu["IP"]++;
+    }
+
+    function LD_contIX_D_n() {
+        memory[cpu["IX"] + memory[cpu["IP"] + 1]] = memory[cpu["IP"] + 2];
+        cpu["IP"] += 2;
+    }
+
+    function LD_contIY_D_n() {
+        memory[cpu["IY"] + memory[cpu["IP"] + 1]] = memory[cpu["IP"] + 2];
+        cpu["IP"] += 2;
+    }
+
+    function LD_A_contBC() {
+        cpu[7] = memory[get16bitFromRegs(0)];
+    }
+
+    function LD_A_contDE() {
+        cpu[7] = memory[get16bitFromRegs(1)];
+    }
+
+    function LD_A_cont_nn() {
+        var arg1 = memory[cpu["IP"] + 1];
+        var arg2 = memory[cpu["IP"] + 2];
+        cpu[7] = memory[get16bit(arg1, arg2)];
+        cpu["IP"] += 2;
+    }
+
+    function LD_contBC_A() {
+        memory[get16bitFromRegs(0)] = cpu[7];
+    }
+
+    function LD_contDE_A() {
+        memory[get16bitFromRegs(1)] = cpu[7];
+    }
+
+    function LD_cont_nn_A() {
+        memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])] = cpu[7];
+        cpu["IP"] += 2;
+    }
+
+    function LD_A_I() {
+        cpu[7] = cpu["I"];
+        if (cpu["I"] < 0) cpu["F"] &= 128;
+        else cpu["F"] &= ~128;
+        if (cpu["I"] == 0) cpu["F"] &= 64;
+        else cpu["F"] &= ~64;
+        cpu["F"] &= ~2;
+        cpu["F"] &= ~16;
+        cpu["F"] &= 8;
+    }
+
+    function LD_A_R() {
+        cpu[7] = cpu["R"];
+        if (cpu["R"] < 0) cpu["F"] &= 128;
+        else cpu["F"] &= ~128;
+        if (cpu["R"] == 0) cpu["F"] &= 64;
+        else cpu["F"] &= ~64;
+        cpu["F"] &= ~2;
+        cpu["F"] &= ~16;
+        cpu["F"] &= 8;
+    }
+
+    function LD_I_A() {
+        cpu["I"] = cpu[7];
+    }
+
+    function LD_R_A() {
+        cpu["R"] = cpu[7];
+    }
+
+    function LD_dd_nn(dd) {
+        set8bit(dd, get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]));
+        cpu["IP"] += 2;
+    }
+
+    function LD_IX_nn() {
+        cpu["IX"] = get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]);
+        cpu["IP"] += 2;
+    }
+
+    function LD_IY_nn() {
+        cpu["IY"] = get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]);
+        cpu["IP"] += 2;
+    }
+
+    function LD_HL_cont_nn() {
+        set8bit(2, memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])]);
+        cpu["IP"] += 2;
+    }
+
+    function LD_dd_cont_nn(dd) {
+        set8bit(dd, memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])]);
+        cpu["IP"] += 2;
+    }
+
+    function LD_IX_cont_nn() {
+        cpu["IX"] = memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])];
+        cpu["IP"] += 2;
+    }
+
+    function LD_IY_cont_nn() {
+        cpu["IY"] = memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])];
+        cpu["IP"] += 2;
+    }
+    function LD_cont_nn_HL() {
+        memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])] = get8bit(get16bitFromRegs(2))[0];
+        memory[(get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]))+1] = get8bit(get16bitFromRegs(2))[1];
+        cpu["IP"] += 2;
+    }
+    function LD_cont_nn_dd(dd) {
+        memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])] = get8bit(get16bitFromRegs(dd))[0];
+        memory[(get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]))+1] = get8bit(get16bitFromRegs(dd))[1];
+        cpu["IP"] += 2;
+    }
+    function LD_cont_nn_IX() {
+        memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])] = get8bit(cpu["IX"])[0];
+        memory[(get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]))+1] = get8bit(cpu["IX"])[1];
+        cpu["IP"] += 2;
+    }
+    function LD_cont_nn_IY() {
+        memory[get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2])] = get8bit(cpu["IY"])[0];
+        memory[(get16bit(memory[cpu["IP"] + 1], memory[cpu["IP"] + 2]))+1] = get8bit(cpu["IY"])[1];
+        cpu["IP"] += 2;
+    }
+    function LD_SP_HL(){
+        set8bit(3,get16bitFromRegs(2));
+        cpu["IP"]--;
+    }
+    function LD_SP_IX(){
+        set8bit(3,cpu["IX"]);
+    }
+    function LD_SP_IY(){
+        set8bit(3,cpu["IY"]);
     }
 </script>
 </body>
